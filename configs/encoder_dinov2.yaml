@@ -1,0 +1,9 @@
+encoder:
+  name: dinov2
+  model_name: vit_base_patch14_dinov2.lvd142m
+  patch_size: 14
+  embed_dim: 768
+  img_size: 518
+
+data:
+  input_size: 518

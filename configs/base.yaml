@@ -1,0 +1,23 @@
+encoder:
+  name: clip
+  model_name: vit_base_patch16_clip_224.openai
+  pretrained: true
+  img_size: 512
+  patch_size: 16
+  embed_dim: 768
+  fpn_dim: 256
+  tap_fractions: [0.25, 0.5, 0.75, 1.0]
+  use_topdown_fpn: false
+  use_smoothing: true
+  out_strides: [4, 8, 16, 32]
+
+data:
+  input_size: 512
+  fraction: 1.0
+
+experiment:
+  seed: 42
+  output_dir: outputs
+
+debug:
+  shape_check: true

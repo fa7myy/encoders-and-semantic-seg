@@ -1,0 +1,5 @@
+encoder:
+  name: mae
+  model_name: vit_base_patch16_224.mae
+  patch_size: 16
+  embed_dim: 768

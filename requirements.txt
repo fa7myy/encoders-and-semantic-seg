@@ -1,0 +1,8 @@
+torch
+timm
+PyYAML
+Pillow
+
+# Optional external dependencies (install separately):
+# detectron2
+# mask2former
