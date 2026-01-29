@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "encoders-and-semantic-seg"
+version = "0.1.0"
+description = "Vision encoder ablations for semantic segmentation with Mask2Former."
+readme = "README.md"
+requires-python = "==3.8.*"
+
+# Keep base install minimal; use extras to select shared/cpu/gpu stacks.
+dependencies = []
+
+[project.optional-dependencies]
+cpu = [
+  "timm==0.6.12",
+  "PyYAML==6.0",
+  "Pillow==9.2.0",
+  "torch @ https://download.pytorch.org/whl/cpu/torch-1.9.1%2Bcpu-cp38-cp38-linux_x86_64.whl ; platform_system == 'Linux' and python_version == '3.8'",
+  "torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.10.1%2Bcpu-cp38-cp38-linux_x86_64.whl ; platform_system == 'Linux' and python_version == '3.8'",
+]
+
+# Detectron2 from source (install after torch to avoid setup.py import errors).
+cpu-d2 = [
+  "detectron2 @ git+https://github.com/facebookresearch/detectron2.git@v0.6",
+]
+
+gpu = [
+  "timm==0.6.12",
+  "PyYAML==6.0",
+  "Pillow==9.2.0",
+  "torch @ https://download.pytorch.org/whl/cu111/torch-1.9.1%2Bcu111-cp38-cp38-linux_x86_64.whl ; platform_system == 'Linux' and python_version == '3.8'",
+  "torchvision @ https://download.pytorch.org/whl/cu111/torchvision-0.10.1%2Bcu111-cp38-cp38-linux_x86_64.whl ; platform_system == 'Linux' and python_version == '3.8'",
+  "detectron2 @ https://dl.fbaipublicfiles.com/detectron2/wheels/cu111/torch1.9/detectron2-0.6+cu111-cp38-cp38-linux_x86_64.whl ; platform_system == 'Linux' and python_version == '3.8'",
+]
+
+[tool.setuptools]
+packages = ["encoders", "experiments", "utils"]
