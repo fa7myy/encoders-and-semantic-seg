@@ -20,11 +20,16 @@ try:  # Optional Detectron2 integration.
     from detectron2.modeling import BACKBONE_REGISTRY
     from detectron2.modeling import ShapeSpec
     from detectron2.config import CfgNode as CN
-except Exception:
+    try:
+        from detectron2.modeling.backbone import SimpleFeaturePyramid
+    except ImportError:
+        SimpleFeaturePyramid = None
+except ImportError:
     Backbone = nn.Module
     BACKBONE_REGISTRY = None
     ShapeSpec = None
     CN = None
+    SimpleFeaturePyramid = None
 
 from .vit_neck import ViTPyramidNeck
 from .vit_utils import compute_tap_indices, tokens_to_feature_map_strict, _get_num_prefix_tokens
@@ -33,34 +38,34 @@ from .vit_utils import compute_tap_indices, tokens_to_feature_map_strict, _get_n
 DEFAULT_TAP_FRACTIONS = (0.25, 0.5, 0.75, 1.0)
 DEFAULT_OUT_FEATURES = ("p2", "p3", "p4", "p5")
 DEFAULT_OUT_STRIDES = (4, 8, 16, 32)
+_SFP_SUPPORTED_SCALES = (4.0, 2.0, 1.0, 0.5)
 
 
-class TimmViTPyramidBackbone(Backbone):
-    """
-    A Detectron2 Backbone wrapper that turns a flat ViT into pyramid features P2-P5.
+def _infer_sfp_scales(patch_size: int, out_strides: Sequence[int]) -> List[float]:
+    scales: List[float] = []
+    for stride in out_strides:
+        scale = float(patch_size) / float(stride)
+        matched = None
+        for candidate in _SFP_SUPPORTED_SCALES:
+            if abs(scale - candidate) < 1e-6:
+                matched = candidate
+                break
+        if matched is None:
+            raise ValueError(
+                f"SimpleFeaturePyramid requires strides derived from patch size. "
+                f"Got patch_size={patch_size}, stride={stride} (scale={scale})."
+            )
+        scales.append(matched)
+    return scales
 
-    Key design:
-    - We always produce outputs at strides 4/8/16/32 (by resizing), independent of patch size.
-    - Intermediate taps are taken from transformer blocks; tokens are reshaped into grids.
-    - Positional embeddings are applied with interpolation if needed (square-grid assumption).
 
-    If your encoder already handles pos-embed interpolation (e.g., via model._pos_embed),
-    we use that. Otherwise we implement a conservative interpolation path.
-    """
-
+class _TimmViTBase(Backbone):
     def __init__(
         self,
         model: nn.Module,
-        fpn_dim: int = 256,
-        tap_fractions: Sequence[float] = DEFAULT_TAP_FRACTIONS,
-        out_features: Sequence[str] = DEFAULT_OUT_FEATURES,
-        out_strides: Sequence[int] = DEFAULT_OUT_STRIDES,
-        use_topdown_fpn: bool = False,
-        use_smoothing: bool = True,
-        use_gn: bool = True,
-        use_final_norm: bool = True,
         patch_size: Optional[int] = None,
         embed_dim: Optional[int] = None,
+        use_final_norm: bool = True,
         num_prefix_tokens_override: Optional[int] = None,
     ) -> None:
         super().__init__()
@@ -74,34 +79,18 @@ class TimmViTPyramidBackbone(Backbone):
             raise ValueError("embed_dim must be provided in the encoder config.")
         if int(embed_dim) <= 0:
             raise ValueError("embed_dim must be a positive integer.")
+        self.embed_dim = int(embed_dim)
 
         if not hasattr(model, "blocks"):
             raise ValueError("Expected model.blocks (timm-like ViT). Wrap your encoder to look timm-like.")
 
-        num_layers = len(getattr(model, "blocks"))
-        self.tap_indices = compute_tap_indices(num_layers, tap_fractions)
-
-        in_dim = int(embed_dim)
+        self.num_layers = len(getattr(model, "blocks"))
         self.use_final_norm = use_final_norm
 
         self.num_prefix_tokens = (
             int(num_prefix_tokens_override)
             if num_prefix_tokens_override is not None
             else _get_num_prefix_tokens(model)
-        )
-
-        self._out_features = list(out_features)
-        self._out_feature_strides = {name: stride for name, stride in zip(out_features, out_strides)}
-        self._out_feature_channels = {name: fpn_dim for name in out_features}
-        self._size_divisibility = max(out_strides)
-
-        self.neck = ViTPyramidNeck(
-            in_dim=in_dim,
-            fpn_dim=fpn_dim,
-            num_levels=len(self._out_features),
-            use_topdown_fpn=use_topdown_fpn,
-            use_smoothing=use_smoothing,
-            use_gn=use_gn,
         )
 
     @property
@@ -242,6 +231,58 @@ class TimmViTPyramidBackbone(Backbone):
 
         return tap_tokens, (grid_h, grid_w), self.num_prefix_tokens
 
+
+class TimmViTPyramidBackbone(_TimmViTBase):
+    """
+    A Detectron2 Backbone wrapper that turns a flat ViT into pyramid features P2-P5.
+
+    Key design:
+    - We always produce outputs at strides 4/8/16/32 (by resizing), independent of patch size.
+    - Intermediate taps are taken from transformer blocks; tokens are reshaped into grids.
+    - Positional embeddings are applied with interpolation if needed (square-grid assumption).
+
+    If your encoder already handles pos-embed interpolation (e.g., via model._pos_embed),
+    we use that. Otherwise we implement a conservative interpolation path.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        fpn_dim: int = 256,
+        tap_fractions: Sequence[float] = DEFAULT_TAP_FRACTIONS,
+        out_features: Sequence[str] = DEFAULT_OUT_FEATURES,
+        out_strides: Sequence[int] = DEFAULT_OUT_STRIDES,
+        use_topdown_fpn: bool = False,
+        use_smoothing: bool = True,
+        use_gn: bool = True,
+        use_final_norm: bool = True,
+        patch_size: Optional[int] = None,
+        embed_dim: Optional[int] = None,
+        num_prefix_tokens_override: Optional[int] = None,
+    ) -> None:
+        super().__init__(
+            model=model,
+            patch_size=patch_size,
+            embed_dim=embed_dim,
+            use_final_norm=use_final_norm,
+            num_prefix_tokens_override=num_prefix_tokens_override,
+        )
+        self.tap_indices = compute_tap_indices(self.num_layers, tap_fractions)
+
+        self._out_features = list(out_features)
+        self._out_feature_strides = {name: stride for name, stride in zip(out_features, out_strides)}
+        self._out_feature_channels = {name: fpn_dim for name in out_features}
+        self._size_divisibility = max(out_strides)
+
+        self.neck = ViTPyramidNeck(
+            in_dim=self.embed_dim,
+            fpn_dim=fpn_dim,
+            num_levels=len(self._out_features),
+            use_topdown_fpn=use_topdown_fpn,
+            use_smoothing=use_smoothing,
+            use_gn=use_gn,
+        )
+
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         _, _, h, w = x.shape
         tap_tokens, grid_hw, num_prefix = self._forward_taps(x)
@@ -266,6 +307,69 @@ class TimmViTPyramidBackbone(Backbone):
         return {name: feat for name, feat in zip(self._out_features, pyramid)}
 
 
+class TimmViTLastFeatBackbone(_TimmViTBase):
+    def __init__(
+        self,
+        model: nn.Module,
+        patch_size: Optional[int] = None,
+        embed_dim: Optional[int] = None,
+        use_final_norm: bool = True,
+        num_prefix_tokens_override: Optional[int] = None,
+        out_feature: str = "last_feat",
+    ) -> None:
+        super().__init__(
+            model=model,
+            patch_size=patch_size,
+            embed_dim=embed_dim,
+            use_final_norm=use_final_norm,
+            num_prefix_tokens_override=num_prefix_tokens_override,
+        )
+        self.tap_indices = [self.num_layers - 1]
+        self._out_features = [out_feature]
+        self._out_feature_strides = {out_feature: self.patch_size}
+        self._out_feature_channels = {out_feature: self.embed_dim}
+        self._size_divisibility = self.patch_size
+
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        tap_tokens, grid_hw, num_prefix = self._forward_taps(x)
+        if not tap_tokens:
+            raise ValueError("No tap outputs available for last feature map.")
+        last_map = tokens_to_feature_map_strict(tap_tokens[-1], grid_hw, num_prefix)
+        return {self._out_features[0]: last_map}
+
+
+def build_vitdet_sfp_backbone(
+    model: nn.Module,
+    fpn_dim: int,
+    out_strides: Sequence[int],
+    patch_size: int,
+    embed_dim: int,
+    use_final_norm: bool = True,
+    num_prefix_tokens_override: Optional[int] = None,
+    sfp_norm: str = "LN",
+) -> Backbone:
+    if SimpleFeaturePyramid is None:
+        raise ImportError(
+            "Detectron2 SimpleFeaturePyramid is required for neck_type=vitdet_sfp."
+        )
+
+    bottom_up = TimmViTLastFeatBackbone(
+        model=model,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        use_final_norm=use_final_norm,
+        num_prefix_tokens_override=num_prefix_tokens_override,
+    )
+    scale_factors = _infer_sfp_scales(patch_size, out_strides)
+    return SimpleFeaturePyramid(
+        net=bottom_up,
+        in_feature="last_feat",
+        out_channels=fpn_dim,
+        scale_factors=scale_factors,
+        norm=sfp_norm,
+    )
+
+
 if BACKBONE_REGISTRY is not None:
 
     @BACKBONE_REGISTRY.register()
@@ -288,6 +392,18 @@ if BACKBONE_REGISTRY is not None:
         num_prefix_override = None
         if hasattr(vit_cfg, "NUM_PREFIX_TOKENS") and vit_cfg.NUM_PREFIX_TOKENS >= 0:
             num_prefix_override = int(vit_cfg.NUM_PREFIX_TOKENS)
+
+        if vit_cfg.NECK_TYPE == "vitdet_sfp":
+            return build_vitdet_sfp_backbone(
+                model=model,
+                fpn_dim=vit_cfg.FPN_DIM,
+                out_strides=vit_cfg.OUT_STRIDES,
+                patch_size=vit_cfg.PATCH_SIZE,
+                embed_dim=vit_cfg.EMBED_DIM,
+                use_final_norm=vit_cfg.USE_FINAL_NORM,
+                num_prefix_tokens_override=num_prefix_override,
+                sfp_norm=vit_cfg.SFP_NORM,
+            )
 
         return TimmViTPyramidBackbone(
             model=model,
@@ -322,3 +438,5 @@ def add_vit_pyramid_config(cfg):
     cfg.MODEL.VIT.USE_GN = True
     cfg.MODEL.VIT.USE_FINAL_NORM = True
     cfg.MODEL.VIT.NUM_PREFIX_TOKENS = -1
+    cfg.MODEL.VIT.NECK_TYPE = "vit_pyramid"
+    cfg.MODEL.VIT.SFP_NORM = "LN"

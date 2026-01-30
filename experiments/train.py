@@ -33,9 +33,12 @@ def build_backbone(cfg: Dict[str, Any]):
         "out_strides": enc_cfg.get("out_strides"),
         "use_topdown_fpn": enc_cfg.get("use_topdown_fpn", False),
         "use_smoothing": enc_cfg.get("use_smoothing", True),
+        "use_final_norm": enc_cfg.get("use_final_norm", True),
         "img_size": enc_cfg.get("img_size"),
         "patch_size": enc_cfg.get("patch_size"),
         "embed_dim": enc_cfg.get("embed_dim"),
+        "neck_type": enc_cfg.get("neck_type", "vit_pyramid"),
+        "sfp_norm": enc_cfg.get("sfp_norm", "LN"),
     }
     if enc_cfg.get("model_name"):
         kwargs["model_name"] = enc_cfg["model_name"]

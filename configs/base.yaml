@@ -10,6 +10,8 @@ encoder:
   use_topdown_fpn: false
   use_smoothing: true
   out_strides: [4, 8, 16, 32]
+  neck_type: vit_pyramid
+  sfp_norm: LN
 
 data:
   input_size: 512

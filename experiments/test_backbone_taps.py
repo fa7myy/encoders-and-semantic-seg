@@ -89,6 +89,7 @@ def main() -> None:
         cfg.setdefault("data", {})["input_size"] = args.input_size
 
     enc_cfg = cfg.get("encoder", {})
+    neck_type = enc_cfg.get("neck_type", "vit_pyramid")
     input_size = cfg.get("data", {}).get("input_size") or enc_cfg.get("img_size")
 
     patch_size = enc_cfg.get("patch_size")
@@ -112,6 +113,31 @@ def main() -> None:
         raise ValueError(
             f"input size {input_h}x{input_w} must be divisible by patch_size {patch_size}."
         )
+
+    if neck_type == "vitdet_sfp":
+        with torch.no_grad():
+            features = backbone(dummy)
+
+        out_strides = enc_cfg.get("out_strides") or [4, 8, 16, 32]
+        out_features = getattr(backbone, "_out_features", list(features.keys()))
+        if len(out_features) != len(out_strides):
+            raise ValueError(
+                f"Expected {len(out_strides)} outputs, got {len(out_features)}."
+            )
+
+        for name, stride in zip(out_features, out_strides):
+            feat = features[name]
+            expected_h = int(math.ceil(input_h / stride))
+            expected_w = int(math.ceil(input_w / stride))
+            if feat.shape[-2:] != (expected_h, expected_w):
+                raise ValueError(
+                    f"{name} spatial shape mismatch: got {feat.shape[-2:]}, "
+                    f"expected {(expected_h, expected_w)}."
+                )
+
+        print("ViTDet SimpleFeaturePyramid: tap checks skipped.")
+        print("Pyramid shapes look consistent.")
+        return
 
     tap_indices = list(backbone.tap_indices)
     hook_outputs: Dict[int, torch.Tensor] = {}

@@ -56,6 +56,10 @@ def _apply_encoder_cfg(cfg, encoder_cfg: Dict[str, Any]) -> None:
     cfg.MODEL.VIT.USE_SMOOTHING = encoder_cfg.get("use_smoothing", True)
     cfg.MODEL.VIT.USE_GN = encoder_cfg.get("use_gn", True)
     cfg.MODEL.VIT.USE_FINAL_NORM = encoder_cfg.get("use_final_norm", True)
+    if encoder_cfg.get("neck_type") is not None:
+        cfg.MODEL.VIT.NECK_TYPE = encoder_cfg["neck_type"]
+    if encoder_cfg.get("sfp_norm") is not None:
+        cfg.MODEL.VIT.SFP_NORM = encoder_cfg["sfp_norm"]
     if encoder_cfg.get("num_prefix_tokens") is not None:
         cfg.MODEL.VIT.NUM_PREFIX_TOKENS = int(encoder_cfg["num_prefix_tokens"])
 
