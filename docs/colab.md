@@ -114,9 +114,31 @@ Swap encoder configs as needed:
 ## 3) Datasets
 
 - Mask2Former configs expect Detectron2-registered datasets (COCO, ADE20K, etc).
-- If you want to train on a custom dataset (for example CamVid), you must
-  register it in Detectron2 and update the Mask2Former config accordingly.
-- The repo does not include dataset registration code.
+- This repo includes VOC2012 registration (auto-runs if `VOCdevkit/` is found).
+- For other custom datasets (for example CamVid), you must register them in
+  Detectron2 and update the Mask2Former config accordingly.
+
+### Pascal VOC 2012 (semantic segmentation)
+
+Place `VOCdevkit/` under `/content` or set `VOC_ROOT` to its parent directory.
+The trainer will auto-register the dataset as `voc_2012_sem_seg_train` and
+`voc_2012_sem_seg_val`.
+
+```bash
+%cd /content/encoders-and-semantic-seg
+%env VOC_ROOT=/content/VOCdevkit
+
+!python experiments/train_mask2former.py \
+  --config-file /content/Mask2Former/configs/ade20k/semantic-segmentation/maskformer2_R50_bs16_160k.yaml \
+  --encoder-config configs/encoder_clip.yaml \
+  DATASETS.TRAIN "('voc_2012_sem_seg_train',)" \
+  DATASETS.TEST "('voc_2012_sem_seg_val',)" \
+  MODEL.SEM_SEG_HEAD.NUM_CLASSES 21 \
+  MODEL.WEIGHTS "" \
+  OUTPUT_DIR outputs/voc_clip
+```
+
+Swap `--encoder-config` and `OUTPUT_DIR` for each encoder trial.
 
 ## 4) Outputs
 

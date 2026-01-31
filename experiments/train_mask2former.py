@@ -23,6 +23,9 @@ except ImportError as exc:
 
 from encoders.vit_backbone import add_vit_pyramid_config
 import encoders.vit_backbone  # noqa: F401 - registers backbone
+from utils.register_voc import maybe_register_voc2012
+
+maybe_register_voc2012()
 
 
 def _load_yaml(path: str) -> Dict[str, Any]:
