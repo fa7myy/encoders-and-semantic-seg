@@ -105,6 +105,10 @@ def setup(args):
         _apply_encoder_cfg(cfg, encoder_cfg)
         _apply_input_cfg(cfg, data_cfg)
 
+    if cfg.SOLVER.CLIP_GRADIENTS.CLIP_TYPE == "full_model":
+        # Detectron2 0.6 doesn't support full_model gradient clipping.
+        cfg.SOLVER.CLIP_GRADIENTS.CLIP_TYPE = "norm"
+
     cfg.freeze()
     default_setup(cfg, args)
     return cfg
