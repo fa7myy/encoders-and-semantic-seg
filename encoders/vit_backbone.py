@@ -152,6 +152,10 @@ class _TimmViTBase(Backbone):
         Prefer model._pos_embed if present (it usually handles interpolation).
         """
         if hasattr(self.model, "_pos_embed"):
+            if getattr(self.model, "dynamic_img_size", False) and x.ndim == 3:
+                b = x.shape[0]
+                x_hw = x.reshape(b, grid_hw[0], grid_hw[1], -1)
+                return self.model._pos_embed(x_hw)
             return self.model._pos_embed(x)
 
         b = x.shape[0]
