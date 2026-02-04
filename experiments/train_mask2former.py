@@ -1,8 +1,10 @@
 import argparse
+import itertools
 import os
 import sys
 from typing import Any, Dict
 
+import torch
 import yaml
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -88,6 +90,107 @@ def _apply_input_cfg(cfg, data_cfg: Dict[str, Any]) -> None:
         cfg.INPUT.MAX_SIZE_TEST = input_size
 
 
+def _build_adamw(cfg, model: torch.nn.Module) -> torch.optim.Optimizer:
+    decay, no_decay = [], []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if name.endswith(".bias") or ("norm" in name.lower()) or ("bn" in name.lower()):
+            no_decay.append(param)
+        else:
+            decay.append(param)
+
+    params = [
+        {"params": decay, "weight_decay": cfg.SOLVER.WEIGHT_DECAY},
+        {"params": no_decay, "weight_decay": 0.0},
+    ]
+
+    betas = (0.9, 0.999)
+    if hasattr(cfg.SOLVER, "BETA1") or hasattr(cfg.SOLVER, "BETA2"):
+        betas = (
+            getattr(cfg.SOLVER, "BETA1", betas[0]),
+            getattr(cfg.SOLVER, "BETA2", betas[1]),
+        )
+    eps = getattr(cfg.SOLVER, "EPS", 1e-8)
+
+    return torch.optim.AdamW(
+        params,
+        lr=cfg.SOLVER.BASE_LR,
+        betas=betas,
+        eps=eps,
+    )
+
+
+def _wrap_full_model_grad_clip(
+    optimizer: torch.optim.Optimizer,
+    max_norm: float,
+    norm_type: float = 2.0,
+) -> torch.optim.Optimizer:
+    class _Wrapped(type(optimizer)):
+        def step(self, closure=None):
+            params = itertools.chain(*[group["params"] for group in self.param_groups])
+            torch.nn.utils.clip_grad_norm_(params, max_norm=max_norm, norm_type=norm_type)
+            return super().step(closure=closure)
+
+    optimizer.__class__ = _Wrapped
+    return optimizer
+
+
+def _build_warmup_poly_lr(cfg, optimizer: torch.optim.Optimizer):
+    max_iter = cfg.SOLVER.MAX_ITER
+    warmup_iters = cfg.SOLVER.WARMUP_ITERS
+    warmup_factor = cfg.SOLVER.WARMUP_FACTOR
+    power = getattr(cfg.SOLVER, "POLY_LR_POWER", 0.9)
+
+    def lr_lambda(iteration: int) -> float:
+        if iteration < warmup_iters:
+            alpha = float(iteration) / max(1, warmup_iters)
+            return warmup_factor * (1 - alpha) + alpha
+        t = float(iteration - warmup_iters)
+        T = float(max(1, max_iter - warmup_iters))
+        return (1.0 - t / T) ** power
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+
+class Trainer(DefaultTrainer):
+    @classmethod
+    def build_optimizer(cls, cfg, model):
+        opt_name = getattr(cfg.SOLVER, "OPTIMIZER", "SGD").upper()
+        clip_cfg = cfg.SOLVER.CLIP_GRADIENTS
+
+        if opt_name == "ADAMW":
+            optimizer = _build_adamw(cfg, model)
+        else:
+            if clip_cfg.ENABLED and clip_cfg.CLIP_TYPE == "full_model":
+                optimizer = torch.optim.SGD(
+                    model.parameters(),
+                    lr=cfg.SOLVER.BASE_LR,
+                    momentum=cfg.SOLVER.MOMENTUM,
+                    nesterov=cfg.SOLVER.NESTEROV,
+                    weight_decay=cfg.SOLVER.WEIGHT_DECAY,
+                )
+            else:
+                optimizer = super().build_optimizer(cfg, model)
+
+        if clip_cfg.ENABLED and clip_cfg.CLIP_TYPE == "full_model":
+            optimizer = _wrap_full_model_grad_clip(
+                optimizer,
+                max_norm=clip_cfg.CLIP_VALUE,
+                norm_type=clip_cfg.NORM_TYPE,
+            )
+
+        print(f"[train_mask2former] Using optimizer: {optimizer.__class__.__name__}")
+        return optimizer
+
+    @classmethod
+    def build_lr_scheduler(cls, cfg, optimizer):
+        name = getattr(cfg.SOLVER, "LR_SCHEDULER_NAME", "WarmupMultiStepLR")
+        if name == "WarmupPolyLR":
+            return _build_warmup_poly_lr(cfg, optimizer)
+        return super().build_lr_scheduler(cfg, optimizer)
+
+
 def setup(args):
     cfg = get_cfg()
     add_deeplab_config(cfg)
@@ -105,10 +208,6 @@ def setup(args):
         _apply_encoder_cfg(cfg, encoder_cfg)
         _apply_input_cfg(cfg, data_cfg)
 
-    if cfg.SOLVER.CLIP_GRADIENTS.CLIP_TYPE == "full_model":
-        # Detectron2 0.6 doesn't support full_model gradient clipping.
-        cfg.SOLVER.CLIP_GRADIENTS.CLIP_TYPE = "norm"
-
     cfg.freeze()
     default_setup(cfg, args)
     return cfg
@@ -118,13 +217,13 @@ def main(args):
     cfg = setup(args)
 
     if args.eval_only:
-        model = DefaultTrainer.build_model(cfg)
+        model = Trainer.build_model(cfg)
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
-        return DefaultTrainer.test(cfg, model)
+        return Trainer.test(cfg, model)
 
-    trainer = DefaultTrainer(cfg)
+    trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
     return trainer.train()
 
