@@ -32,6 +32,33 @@ from utils.register_voc import maybe_register_voc2012
 maybe_register_voc2012()
 
 
+def _patch_mask2former_empty_targets() -> None:
+    try:
+        from mask2former.modeling import matcher as m2f_matcher
+    except Exception:
+        return
+
+    if getattr(m2f_matcher, "_EMPTY_TARGETS_PATCHED", False):
+        return
+
+    def _wrap_empty_targets(fn):
+        def _wrapped(inputs, targets):
+            if targets is None or targets.numel() == 0 or targets.shape[0] == 0:
+                return inputs.new_zeros((inputs.shape[0], 0))
+            return fn(inputs, targets)
+
+        return _wrapped
+
+    if hasattr(m2f_matcher, "batch_dice_loss_jit"):
+        m2f_matcher.batch_dice_loss_jit = _wrap_empty_targets(m2f_matcher.batch_dice_loss_jit)
+    if hasattr(m2f_matcher, "batch_sigmoid_ce_loss_jit"):
+        m2f_matcher.batch_sigmoid_ce_loss_jit = _wrap_empty_targets(
+            m2f_matcher.batch_sigmoid_ce_loss_jit
+        )
+
+    m2f_matcher._EMPTY_TARGETS_PATCHED = True
+
+
 def _load_yaml(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
@@ -247,6 +274,7 @@ class Trainer(DefaultTrainer):
 
 
 def setup(args):
+    _patch_mask2former_empty_targets()
     cfg = get_cfg()
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
