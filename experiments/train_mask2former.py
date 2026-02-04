@@ -13,6 +13,7 @@ try:
     from detectron2.config import get_cfg
     from detectron2.engine import DefaultTrainer, default_argument_parser, default_setup, launch
     from detectron2.checkpoint import DetectionCheckpointer
+    from detectron2.projects.deeplab import add_deeplab_config
 except ImportError as exc:
     raise ImportError("Detectron2 is required to train Mask2Former.") from exc
 
@@ -81,6 +82,7 @@ def _apply_input_cfg(cfg, data_cfg: Dict[str, Any]) -> None:
 
 def setup(args):
     cfg = get_cfg()
+    add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
     add_vit_pyramid_config(cfg)
     cfg.merge_from_file(args.config_file)
