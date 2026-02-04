@@ -254,6 +254,10 @@ def setup(args):
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
 
+    opts = set(args.opts)
+    if "SOLVER.IMS_PER_BATCH" not in args.opts:
+        cfg.SOLVER.IMS_PER_BATCH = 2
+
     if args.encoder_config:
         base_cfg = _load_yaml(args.base_encoder_config)
         override_cfg = _load_yaml(args.encoder_config)
@@ -262,6 +266,23 @@ def setup(args):
         data_cfg = merged.get("data", {})
         _apply_encoder_cfg(cfg, encoder_cfg)
         _apply_input_cfg(cfg, data_cfg)
+
+    if "INPUT.MIN_SIZE_TRAIN" not in opts:
+        cfg.INPUT.MIN_SIZE_TRAIN = [384]
+    if "INPUT.MAX_SIZE_TRAIN" not in opts:
+        cfg.INPUT.MAX_SIZE_TRAIN = 384
+    if "INPUT.MIN_SIZE_TEST" not in opts:
+        cfg.INPUT.MIN_SIZE_TEST = 384
+    if "INPUT.MAX_SIZE_TEST" not in opts:
+        cfg.INPUT.MAX_SIZE_TEST = 384
+    if "INPUT.CROP.SIZE" not in opts:
+        cfg.INPUT.CROP.SIZE = [384, 384]
+    if "INPUT.SIZE_DIVISIBILITY" not in opts:
+        cfg.INPUT.SIZE_DIVISIBILITY = 32
+    if "MODEL.MASK_FORMER.NUM_OBJECT_QUERIES" not in opts:
+        cfg.MODEL.MASK_FORMER.NUM_OBJECT_QUERIES = 50
+    if "MODEL.MASK_FORMER.TRAIN_NUM_POINTS" not in opts:
+        cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS = 8192
 
     cfg.freeze()
     default_setup(cfg, args)
