@@ -69,6 +69,14 @@ def _apply_encoder_cfg(cfg, encoder_cfg: Dict[str, Any]) -> None:
 
     if hasattr(cfg.MODEL, "SEM_SEG_HEAD"):
         cfg.MODEL.SEM_SEG_HEAD.IN_FEATURES = ["p2", "p3", "p4", "p5"]
+        if hasattr(cfg.MODEL.SEM_SEG_HEAD, "DEFORMABLE_TRANSFORMER_ENCODER_IN_FEATURES"):
+            cfg.MODEL.SEM_SEG_HEAD.DEFORMABLE_TRANSFORMER_ENCODER_IN_FEATURES = [
+                "p3",
+                "p4",
+                "p5",
+            ]
+        if hasattr(cfg.MODEL.SEM_SEG_HEAD, "PROJECT_FEATURES"):
+            cfg.MODEL.SEM_SEG_HEAD.PROJECT_FEATURES = ["p2"]
 
 
 def _apply_input_cfg(cfg, data_cfg: Dict[str, Any]) -> None:
