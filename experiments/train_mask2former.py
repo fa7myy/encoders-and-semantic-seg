@@ -180,7 +180,11 @@ class Trainer(DefaultTrainer):
                 norm_type=clip_cfg.NORM_TYPE,
             )
 
-        print(f"[train_mask2former] Using optimizer: {optimizer.__class__.__name__}")
+        opt_class = optimizer.__class__.__name__
+        if opt_class == "_Wrapped" and len(optimizer.__class__.__mro__) > 1:
+            base_class = optimizer.__class__.__mro__[1].__name__
+            opt_class = f"{base_class} (wrapped for full_model clip)"
+        print(f"[train_mask2former] Using optimizer: {opt_class}")
         return optimizer
 
     @classmethod

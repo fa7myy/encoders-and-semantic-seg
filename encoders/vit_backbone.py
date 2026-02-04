@@ -388,6 +388,14 @@ if BACKBONE_REGISTRY is not None:
         if vit_cfg.IMG_SIZE:
             kwargs["img_size"] = vit_cfg.IMG_SIZE
         model = timm.create_model(vit_cfg.MODEL_NAME, **kwargs)
+        patch_embed = getattr(model, "patch_embed", None)
+        if patch_embed is not None:
+            if hasattr(patch_embed, "strict_img_size"):
+                patch_embed.strict_img_size = False
+            if hasattr(patch_embed, "dynamic_img_size"):
+                patch_embed.dynamic_img_size = True
+        if hasattr(model, "dynamic_img_size"):
+            model.dynamic_img_size = True
 
         num_prefix_override = None
         if hasattr(vit_cfg, "NUM_PREFIX_TOKENS") and vit_cfg.NUM_PREFIX_TOKENS >= 0:
