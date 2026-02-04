@@ -111,6 +111,20 @@ Swap encoder configs as needed:
   --encoder-config configs/encoder_dinov2.yaml
 ```
 
+Optional training flags:
+
+- `--freeze-backbone` to keep the encoder frozen.
+- `--max-epochs N` to cap training by epoch count (default: 30). This is converted to `SOLVER.MAX_ITER`.
+  If you want to set iterations directly, pass `SOLVER.MAX_ITER` on the command line.
+
+Memory-friendly defaults applied by `train_mask2former.py` (override on the CLI if needed):
+
+- `SOLVER.IMS_PER_BATCH = 2`
+- `INPUT.MIN/MAX_SIZE_{TRAIN,TEST} = 384`, `INPUT.CROP.SIZE = [384, 384]`
+- `INPUT.SIZE_DIVISIBILITY = 32`
+- `MODEL.MASK_FORMER.NUM_OBJECT_QUERIES = 50`
+- `MODEL.MASK_FORMER.TRAIN_NUM_POINTS = 8192`
+
 ## 3) Datasets
 
 - Mask2Former configs expect Detectron2-registered datasets (COCO, ADE20K, etc).

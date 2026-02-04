@@ -1,5 +1,6 @@
 import argparse
 import itertools
+import math
 import os
 import sys
 from typing import Any, Dict
@@ -14,7 +15,11 @@ if REPO_ROOT not in sys.path:
 try:
     from detectron2.config import get_cfg
     from detectron2.engine import DefaultTrainer, default_argument_parser, default_setup, launch
-    from detectron2.data import build_detection_test_loader, build_detection_train_loader
+    from detectron2.data import (
+        DatasetCatalog,
+        build_detection_test_loader,
+        build_detection_train_loader,
+    )
     from detectron2.checkpoint import DetectionCheckpointer
     from detectron2.projects.deeplab import add_deeplab_config
 except ImportError as exc:
@@ -118,6 +123,32 @@ def _apply_input_cfg(cfg, data_cfg: Dict[str, Any]) -> None:
         cfg.INPUT.MAX_SIZE_TEST = input_size
 
 
+def _maybe_set_max_iter(cfg, max_epochs: int, opts: set) -> None:
+    if max_epochs is None or max_epochs <= 0:
+        return
+    if "SOLVER.MAX_ITER" in opts:
+        return
+    dataset_names = cfg.DATASETS.TRAIN
+    if not dataset_names:
+        return
+    dataset_size = 0
+    for name in dataset_names:
+        try:
+            dataset_size += len(DatasetCatalog.get(name))
+        except Exception as exc:
+            print(f"[train_mask2former] Skipping MAX_ITER override; dataset '{name}' not registered ({exc}).")
+            return
+    if dataset_size == 0:
+        return
+    ims_per_batch = max(1, int(cfg.SOLVER.IMS_PER_BATCH))
+    iters_per_epoch = int(math.ceil(dataset_size / ims_per_batch))
+    cfg.SOLVER.MAX_ITER = max_epochs * iters_per_epoch
+    print(
+        f"[train_mask2former] MAX_ITER set to {cfg.SOLVER.MAX_ITER} "
+        f"({max_epochs} epochs, {dataset_size} samples, batch {ims_per_batch})"
+    )
+
+
 def _build_adamw(cfg, model: torch.nn.Module) -> torch.optim.Optimizer:
     decay, no_decay = [], []
     for name, param in model.named_parameters():
@@ -182,6 +213,16 @@ def _build_warmup_poly_lr(cfg, optimizer: torch.optim.Optimizer):
 
 
 class Trainer(DefaultTrainer):
+    @classmethod
+    def build_model(cls, cfg):
+        model = super().build_model(cfg)
+        if getattr(cfg.MODEL.BACKBONE, "FREEZE", False):
+            for param in model.backbone.parameters():
+                param.requires_grad = False
+            model.backbone.eval()
+            print("[train_mask2former] Backbone frozen.")
+        return model
+
     @classmethod
     def build_train_loader(cls, cfg):
         mapper_name = getattr(cfg.INPUT, "DATASET_MAPPER_NAME", "")
@@ -283,8 +324,10 @@ def setup(args):
     cfg.merge_from_list(args.opts)
 
     opts = set(args.opts)
-    if "SOLVER.IMS_PER_BATCH" not in args.opts:
+    if "SOLVER.IMS_PER_BATCH" not in opts:
         cfg.SOLVER.IMS_PER_BATCH = 2
+    if args.freeze_backbone:
+        cfg.MODEL.BACKBONE.FREEZE = True
 
     if args.encoder_config:
         base_cfg = _load_yaml(args.base_encoder_config)
@@ -311,6 +354,7 @@ def setup(args):
         cfg.MODEL.MASK_FORMER.NUM_OBJECT_QUERIES = 50
     if "MODEL.MASK_FORMER.TRAIN_NUM_POINTS" not in opts:
         cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS = 8192
+    _maybe_set_max_iter(cfg, args.max_epochs, opts)
 
     cfg.freeze()
     default_setup(cfg, args)
@@ -336,6 +380,8 @@ def build_parser():
     parser = default_argument_parser()
     parser.add_argument("--encoder-config", default="configs/base.yaml")
     parser.add_argument("--base-encoder-config", default="configs/base.yaml")
+    parser.add_argument("--freeze-backbone", action="store_true")
+    parser.add_argument("--max-epochs", type=int, default=30)
     return parser
 
 
