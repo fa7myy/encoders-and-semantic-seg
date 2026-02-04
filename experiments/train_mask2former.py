@@ -14,6 +14,7 @@ if REPO_ROOT not in sys.path:
 try:
     from detectron2.config import get_cfg
     from detectron2.engine import DefaultTrainer, default_argument_parser, default_setup, launch
+    from detectron2.data import build_detection_test_loader, build_detection_train_loader
     from detectron2.checkpoint import DetectionCheckpointer
     from detectron2.projects.deeplab import add_deeplab_config
 except ImportError as exc:
@@ -154,6 +155,56 @@ def _build_warmup_poly_lr(cfg, optimizer: torch.optim.Optimizer):
 
 
 class Trainer(DefaultTrainer):
+    @classmethod
+    def build_train_loader(cls, cfg):
+        mapper_name = getattr(cfg.INPUT, "DATASET_MAPPER_NAME", "")
+        mapper = None
+        if mapper_name == "mask_former_semantic":
+            from mask2former.data.dataset_mappers.mask_former_semantic_dataset_mapper import (
+                MaskFormerSemanticDatasetMapper,
+            )
+
+            mapper = MaskFormerSemanticDatasetMapper(cfg, True)
+        elif mapper_name == "mask_former_instance":
+            from mask2former.data.dataset_mappers.mask_former_instance_dataset_mapper import (
+                MaskFormerInstanceDatasetMapper,
+            )
+
+            mapper = MaskFormerInstanceDatasetMapper(cfg, True)
+        elif mapper_name == "mask_former_panoptic":
+            from mask2former.data.dataset_mappers.mask_former_panoptic_dataset_mapper import (
+                MaskFormerPanopticDatasetMapper,
+            )
+
+            mapper = MaskFormerPanopticDatasetMapper(cfg, True)
+
+        return build_detection_train_loader(cfg, mapper=mapper)
+
+    @classmethod
+    def build_test_loader(cls, cfg, dataset_name):
+        mapper_name = getattr(cfg.INPUT, "DATASET_MAPPER_NAME", "")
+        mapper = None
+        if mapper_name == "mask_former_semantic":
+            from mask2former.data.dataset_mappers.mask_former_semantic_dataset_mapper import (
+                MaskFormerSemanticDatasetMapper,
+            )
+
+            mapper = MaskFormerSemanticDatasetMapper(cfg, False)
+        elif mapper_name == "mask_former_instance":
+            from mask2former.data.dataset_mappers.mask_former_instance_dataset_mapper import (
+                MaskFormerInstanceDatasetMapper,
+            )
+
+            mapper = MaskFormerInstanceDatasetMapper(cfg, False)
+        elif mapper_name == "mask_former_panoptic":
+            from mask2former.data.dataset_mappers.mask_former_panoptic_dataset_mapper import (
+                MaskFormerPanopticDatasetMapper,
+            )
+
+            mapper = MaskFormerPanopticDatasetMapper(cfg, False)
+
+        return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
+
     @classmethod
     def build_optimizer(cls, cfg, model):
         opt_name = getattr(cfg.SOLVER, "OPTIMIZER", "SGD").upper()
