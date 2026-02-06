@@ -166,19 +166,56 @@ def _maybe_set_max_iter(cfg, max_epochs: int, opts: set) -> None:
 
 
 def _build_adamw(cfg, model: torch.nn.Module) -> torch.optim.Optimizer:
-    decay, no_decay = [], []
-    for name, param in model.named_parameters():
-        if not param.requires_grad:
-            continue
-        if name.endswith(".bias") or ("norm" in name.lower()) or ("bn" in name.lower()):
-            no_decay.append(param)
-        else:
-            decay.append(param)
+    weight_decay = float(cfg.SOLVER.WEIGHT_DECAY)
+    weight_decay_norm = float(getattr(cfg.SOLVER, "WEIGHT_DECAY_NORM", 0.0) or 0.0)
+    weight_decay_embed = float(getattr(cfg.SOLVER, "WEIGHT_DECAY_EMBED", 0.0) or 0.0)
+    backbone_mult = float(getattr(cfg.SOLVER, "BACKBONE_MULTIPLIER", 1.0) or 1.0)
+    base_lr = float(cfg.SOLVER.BASE_LR)
 
-    params = [
-        {"params": decay, "weight_decay": cfg.SOLVER.WEIGHT_DECAY},
-        {"params": no_decay, "weight_decay": 0.0},
-    ]
+    norm_module_types = (
+        torch.nn.BatchNorm1d,
+        torch.nn.BatchNorm2d,
+        torch.nn.BatchNorm3d,
+        torch.nn.SyncBatchNorm,
+        torch.nn.GroupNorm,
+        torch.nn.InstanceNorm1d,
+        torch.nn.InstanceNorm2d,
+        torch.nn.InstanceNorm3d,
+        torch.nn.LayerNorm,
+        torch.nn.LocalResponseNorm,
+    )
+
+    params = []
+    memo = set()
+    for module_name, module in model.named_modules():
+        for module_param_name, value in module.named_parameters(recurse=False):
+            if not value.requires_grad:
+                continue
+            if value in memo:
+                continue
+            memo.add(value)
+
+            hyperparams = {"lr": base_lr, "weight_decay": weight_decay}
+            if "backbone" in module_name:
+                hyperparams["lr"] *= backbone_mult
+
+            # Common "no weight decay" exceptions for transformer-style models.
+            lowered = module_param_name.lower()
+            if (
+                "relative_position_bias_table" in lowered
+                or "absolute_pos_embed" in lowered
+                or "pos_embed" in lowered
+                or "cls_token" in lowered
+                or "dist_token" in lowered
+            ):
+                hyperparams["weight_decay"] = 0.0
+
+            if isinstance(module, norm_module_types):
+                hyperparams["weight_decay"] = weight_decay_norm
+            if isinstance(module, torch.nn.Embedding):
+                hyperparams["weight_decay"] = weight_decay_embed
+
+            params.append({"params": [value], **hyperparams})
 
     betas = (0.9, 0.999)
     if hasattr(cfg.SOLVER, "BETA1") or hasattr(cfg.SOLVER, "BETA2"):
@@ -188,12 +225,7 @@ def _build_adamw(cfg, model: torch.nn.Module) -> torch.optim.Optimizer:
         )
     eps = getattr(cfg.SOLVER, "EPS", 1e-8)
 
-    return torch.optim.AdamW(
-        params,
-        lr=cfg.SOLVER.BASE_LR,
-        betas=betas,
-        eps=eps,
-    )
+    return torch.optim.AdamW(params, lr=base_lr, betas=betas, eps=eps)
 
 
 def _wrap_full_model_grad_clip(
