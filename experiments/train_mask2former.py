@@ -3,7 +3,8 @@ import itertools
 import math
 import os
 import sys
-from typing import Any, Dict
+import time
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import yaml
@@ -17,10 +18,12 @@ try:
     from detectron2.engine import DefaultTrainer, default_argument_parser, default_setup, launch
     from detectron2.data import (
         DatasetCatalog,
+        MetadataCatalog,
         build_detection_test_loader,
         build_detection_train_loader,
     )
     from detectron2.checkpoint import DetectionCheckpointer
+    from detectron2.evaluation import DatasetEvaluators, SemSegEvaluator
     from detectron2.projects.deeplab import add_deeplab_config
 except ImportError as exc:
     raise ImportError("Detectron2 is required to train Mask2Former.") from exc
@@ -32,9 +35,20 @@ except ImportError as exc:
 
 from encoders.vit_backbone import add_vit_pyramid_config
 import encoders.vit_backbone  # noqa: F401 - registers backbone
+from utils.data import (
+    validate_encoder_and_data_config,
+    validate_existing_file,
+    validate_mask2former_config,
+)
+from utils.logging import write_json_file
+from utils.metrics import count_parameters, summarize_timing
 from utils.register_voc import maybe_register_voc2012
 
 maybe_register_voc2012()
+
+DEFAULT_MASK2FORMER_CONFIG = "configs/mask2former_voc.yaml"
+DEFAULT_ENCODER_CONFIG = "configs/encoder_clip.yaml"
+DEFAULT_BASE_ENCODER_CONFIG = "configs/base.yaml"
 
 
 def _patch_mask2former_empty_targets() -> None:
@@ -212,6 +226,114 @@ def _build_warmup_poly_lr(cfg, optimizer: torch.optim.Optimizer):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
 
+def _save_eval_results(cfg, results: Dict[str, Any], output_path: Optional[str] = None) -> str:
+    if output_path:
+        out_file = output_path
+    else:
+        out_file = os.path.join(cfg.OUTPUT_DIR, "eval_results.json")
+    write_json_file(out_file, results)
+    return out_file
+
+
+def _default_eval_hw(cfg) -> Tuple[int, int]:
+    min_size_test = cfg.INPUT.MIN_SIZE_TEST
+    if isinstance(min_size_test, (list, tuple)):
+        short_side = int(min_size_test[0])
+    else:
+        short_side = int(min_size_test)
+    max_size_test = cfg.INPUT.MAX_SIZE_TEST
+    max_side = int(max_size_test[0] if isinstance(max_size_test, (list, tuple)) else max_size_test)
+    side = min(short_side, max_side)
+    return side, side
+
+
+def _estimate_model_flops(cfg, model: torch.nn.Module) -> Tuple[Optional[float], Optional[str]]:
+    try:
+        from fvcore.nn import FlopCountAnalysis
+    except Exception as exc:
+        return None, f"FLOPs unavailable: {exc}"
+
+    h, w = _default_eval_hw(cfg)
+    first_param = next(model.parameters(), None)
+    device = first_param.device if first_param is not None else torch.device("cpu")
+    dummy = torch.zeros((3, h, w), device=device)
+    inputs = [{"image": dummy, "height": h, "width": w}]
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            total_flops = float(FlopCountAnalysis(model, inputs).total())
+    except Exception as exc:
+        return None, f"FLOPs unavailable: {exc}"
+    finally:
+        if was_training:
+            model.train()
+    return total_flops, None
+
+
+def _benchmark_inference(
+    cfg,
+    model: torch.nn.Module,
+    dataset_name: str,
+    max_batches: int,
+) -> Dict[str, Any]:
+    data_loader = Trainer.build_test_loader(cfg, dataset_name)
+    warmup_batches = 5
+    all_time = 0.0
+    all_images = 0
+    measured_time = 0.0
+    measured_images = 0
+
+    was_training = model.training
+    model.eval()
+    with torch.no_grad():
+        for idx, inputs in enumerate(data_loader):
+            if max_batches > 0 and idx >= max_batches:
+                break
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            start = time.perf_counter()
+            model(inputs)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            elapsed = time.perf_counter() - start
+            batch_size = len(inputs) if isinstance(inputs, (list, tuple)) else 1
+
+            all_time += elapsed
+            all_images += batch_size
+            if idx >= warmup_batches:
+                measured_time += elapsed
+                measured_images += batch_size
+
+    if was_training:
+        model.train()
+
+    if measured_images == 0:
+        measured_time = all_time
+        measured_images = all_images
+    timing = summarize_timing(measured_time, measured_images)
+    return {
+        "seconds_per_image": timing["seconds_per_image"],
+        "images_per_second": timing["images_per_second"],
+        "images_measured": measured_images,
+        "max_batches": max_batches,
+        "warmup_batches": warmup_batches,
+    }
+
+
+class SemSegEvaluatorWithConfusion(SemSegEvaluator):
+    def evaluate(self):
+        results = super().evaluate() or {}
+        sem_seg_results = results.get("sem_seg")
+        conf_mat = getattr(self, "_conf_matrix", None)
+        if sem_seg_results is None or conf_mat is None:
+            return results
+        if conf_mat.shape[0] > 1 and conf_mat.shape[1] > 1:
+            conf_mat = conf_mat[:-1, :-1]
+        sem_seg_results["confusion_matrix"] = conf_mat.tolist()
+        return results
+
+
 class Trainer(DefaultTrainer):
     @classmethod
     def build_model(cls, cfg):
@@ -274,6 +396,29 @@ class Trainer(DefaultTrainer):
         return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
 
     @classmethod
+    def build_evaluator(cls, cfg, dataset_name, output_folder=None):
+        if output_folder is None:
+            output_folder = os.path.join(cfg.OUTPUT_DIR, "inference", dataset_name)
+        os.makedirs(output_folder, exist_ok=True)
+        evaluator_type = MetadataCatalog.get(dataset_name).evaluator_type
+        evaluators = []
+        if evaluator_type == "sem_seg":
+            evaluators.append(
+                SemSegEvaluatorWithConfusion(
+                    dataset_name,
+                    distributed=True,
+                    output_dir=output_folder,
+                )
+            )
+        if not evaluators:
+            raise NotImplementedError(
+                f"No evaluator for dataset '{dataset_name}' with evaluator_type='{evaluator_type}'."
+            )
+        if len(evaluators) == 1:
+            return evaluators[0]
+        return DatasetEvaluators(evaluators)
+
+    @classmethod
     def build_optimizer(cls, cfg, model):
         opt_name = getattr(cfg.SOLVER, "OPTIMIZER", "SGD").upper()
         clip_cfg = cfg.SOLVER.CLIP_GRADIENTS
@@ -315,6 +460,22 @@ class Trainer(DefaultTrainer):
 
 
 def setup(args):
+    validate_mask2former_config(
+        {
+            "config_file": args.config_file,
+            "max_epochs": args.max_epochs,
+            "benchmark_max_batches": args.benchmark_max_batches,
+            "eval_output_file": args.eval_output_file,
+        },
+        mode="eval" if args.eval_only else "train",
+        config_required=True,
+    )
+    validate_existing_file(args.config_file, "--config-file")
+    if args.encoder_config:
+        validate_existing_file(args.encoder_config, "--encoder-config")
+    if args.base_encoder_config:
+        validate_existing_file(args.base_encoder_config, "--base-encoder-config")
+
     _patch_mask2former_empty_targets()
     cfg = get_cfg()
     add_deeplab_config(cfg)
@@ -335,21 +496,19 @@ def setup(args):
         merged = _deep_merge(base_cfg, override_cfg)
         encoder_cfg = merged.get("encoder", {})
         data_cfg = merged.get("data", {})
+        validate_encoder_and_data_config(
+            encoder_cfg,
+            data_cfg,
+            require_model_name=True,
+        )
         _apply_encoder_cfg(cfg, encoder_cfg)
         _apply_input_cfg(cfg, data_cfg)
 
-    if "INPUT.MIN_SIZE_TRAIN" not in opts:
-        cfg.INPUT.MIN_SIZE_TRAIN = [384]
-    if "INPUT.MAX_SIZE_TRAIN" not in opts:
-        cfg.INPUT.MAX_SIZE_TRAIN = 384
-    if "INPUT.MIN_SIZE_TEST" not in opts:
-        cfg.INPUT.MIN_SIZE_TEST = 384
-    if "INPUT.MAX_SIZE_TEST" not in opts:
-        cfg.INPUT.MAX_SIZE_TEST = 384
-    if "INPUT.CROP.SIZE" not in opts:
-        cfg.INPUT.CROP.SIZE = [384, 384]
-    if "INPUT.SIZE_DIVISIBILITY" not in opts:
-        cfg.INPUT.SIZE_DIVISIBILITY = 32
+    if args.eval_only and not args.resume and not getattr(cfg.MODEL, "WEIGHTS", ""):
+        raise ValueError(
+            "Evaluation requires model weights. Provide MODEL.WEIGHTS via --opts or set --resume."
+        )
+
     if "MODEL.MASK_FORMER.NUM_OBJECT_QUERIES" not in opts:
         cfg.MODEL.MASK_FORMER.NUM_OBJECT_QUERIES = 50
     if "MODEL.MASK_FORMER.TRAIN_NUM_POINTS" not in opts:
@@ -361,15 +520,52 @@ def setup(args):
     return cfg
 
 
+def _run_eval_only(cfg, args):
+    if not cfg.DATASETS.TEST:
+        raise ValueError("Evaluation requires cfg.DATASETS.TEST to be set.")
+    model = Trainer.build_model(cfg)
+    DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
+        cfg.MODEL.WEIGHTS, resume=args.resume
+    )
+    task_metrics = Trainer.test(cfg, model)
+
+    report: Dict[str, Any] = {
+        "task_metrics": task_metrics,
+        "efficiency": {
+            "parameters": count_parameters(model),
+        },
+    }
+
+    if not args.skip_flops:
+        total_flops, flops_error = _estimate_model_flops(cfg, model)
+        report["efficiency"]["flops"] = {
+            "total": total_flops,
+            "error": flops_error,
+            "input_hw": list(_default_eval_hw(cfg)),
+        }
+
+    if not args.skip_inference_benchmark:
+        datasets = list(cfg.DATASETS.TEST)
+        benchmark = {}
+        for dataset_name in datasets:
+            benchmark[dataset_name] = _benchmark_inference(
+                cfg,
+                model,
+                dataset_name=dataset_name,
+                max_batches=args.benchmark_max_batches,
+            )
+        report["efficiency"]["inference"] = benchmark
+
+    output_path = _save_eval_results(cfg, report, output_path=args.eval_output_file)
+    print(f"[train_mask2former] Evaluation report saved to {output_path}")
+    return report
+
+
 def main(args):
     cfg = setup(args)
 
     if args.eval_only:
-        model = Trainer.build_model(cfg)
-        DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
-            cfg.MODEL.WEIGHTS, resume=args.resume
-        )
-        return Trainer.test(cfg, model)
+        return _run_eval_only(cfg, args)
 
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
@@ -378,10 +574,15 @@ def main(args):
 
 def build_parser():
     parser = default_argument_parser()
-    parser.add_argument("--encoder-config", default="configs/base.yaml")
-    parser.add_argument("--base-encoder-config", default="configs/base.yaml")
+    parser.set_defaults(config_file=DEFAULT_MASK2FORMER_CONFIG)
+    parser.add_argument("--encoder-config", default=DEFAULT_ENCODER_CONFIG)
+    parser.add_argument("--base-encoder-config", default=DEFAULT_BASE_ENCODER_CONFIG)
     parser.add_argument("--freeze-backbone", action="store_true")
     parser.add_argument("--max-epochs", type=int, default=30)
+    parser.add_argument("--skip-flops", action="store_true")
+    parser.add_argument("--skip-inference-benchmark", action="store_true")
+    parser.add_argument("--benchmark-max-batches", type=int, default=50)
+    parser.add_argument("--eval-output-file", default="")
     return parser
 
 

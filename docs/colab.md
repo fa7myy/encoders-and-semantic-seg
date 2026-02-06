@@ -120,10 +120,11 @@ Optional training flags:
 Memory-friendly defaults applied by `train_mask2former.py` (override on the CLI if needed):
 
 - `SOLVER.IMS_PER_BATCH = 2`
-- `INPUT.MIN/MAX_SIZE_{TRAIN,TEST} = 384`, `INPUT.CROP.SIZE = [384, 384]`
-- `INPUT.SIZE_DIVISIBILITY = 32`
 - `MODEL.MASK_FORMER.NUM_OBJECT_QUERIES = 50`
 - `MODEL.MASK_FORMER.TRAIN_NUM_POINTS = 8192`
+
+Input/image sizing now comes from your Mask2Former + encoder configs.
+The repo default (`configs/mask2former_voc.yaml`) uses original Mask2Former-style 512/2048 sizing.
 
 ## 3) Datasets
 

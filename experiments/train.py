@@ -1,3 +1,9 @@
+"""
+Backbone-only smoke path.
+
+Use experiments/train_mask2former.py for full Detectron2/Mask2Former training.
+"""
+
 from typing import Any, Dict
 
 import torch
@@ -63,6 +69,6 @@ def train(cfg: Dict[str, Any]):
         return backbone
 
     raise NotImplementedError(
-        "Mask2Former training is not wired here yet. Call your external trainer "
-        "after build_backbone(cfg)."
+        "This entrypoint only runs backbone smoke checks. "
+        "Use experiments/train_mask2former.py for full Mask2Former training."
     )

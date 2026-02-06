@@ -68,24 +68,50 @@ sh make.sh
 4) Run training:
 
 ```
-python experiments/train_mask2former.py \
-  --config-file path/to/mask2former_config.yaml \
-  --encoder-config configs/encoder_clip.yaml
+python experiments/run_experiment.py
 ```
+
+5) Run evaluation:
+
+```
+python experiments/run_experiment.py \
+  --mode eval \
+  --weights path/to/model_final.pth
+```
+
+Default config files used by these commands:
+- Mask2Former config: `configs/mask2former_voc.yaml`
+- Encoder config: `configs/encoder_clip.yaml`
+
+Equivalent direct runner:
+
+```
+python experiments/train_mask2former.py
+python experiments/train_mask2former.py --eval-only --opts MODEL.WEIGHTS path/to/model_final.pth
+```
+
+Evaluation writes `OUTPUT_DIR/eval_results.json` and includes:
+- mIoU and mean class accuracy (for sem-seg datasets),
+- confusion matrix,
+- inference time benchmark,
+- parameter counts and FLOPs (when available).
 
 Optional training flags:
 
 - `--freeze-backbone` to keep the encoder frozen.
 - `--max-epochs N` to cap training by epoch count (default: 30). This is converted to `SOLVER.MAX_ITER`.
   If you want to set iterations directly, pass `SOLVER.MAX_ITER` on the command line.
+- `--skip-inference-benchmark` or `--benchmark-max-batches N` to control timing benchmark cost.
+- `--skip-flops` to skip FLOP estimation.
 
 Memory-friendly defaults applied by `train_mask2former.py` (override on the CLI if needed):
 
 - `SOLVER.IMS_PER_BATCH = 2`
-- `INPUT.MIN/MAX_SIZE_{TRAIN,TEST} = 384`, `INPUT.CROP.SIZE = [384, 384]`
-- `INPUT.SIZE_DIVISIBILITY = 32`
 - `MODEL.MASK_FORMER.NUM_OBJECT_QUERIES = 50`
 - `MODEL.MASK_FORMER.TRAIN_NUM_POINTS = 8192`
+
+Input/image sizing comes from your Mask2Former config and encoder config.
+The default `configs/mask2former_voc.yaml` now uses original Mask2Former-style 512/2048 sizing.
 
 ---
 
@@ -98,3 +124,4 @@ Memory-friendly defaults applied by `train_mask2former.py` (override on the CLI 
 - `configs/encoder_dinov2.yaml` uses `input_size: 518` to match patch size 14.
 - Encoder configs must include `patch_size` and `embed_dim`.
 - For DINOv2/CLIP/MAE, model weights are pulled via `timm` when `pretrained: true`.
+- `configs/mask2former_voc.yaml` expects your local Mask2Former clone at `./Mask2Former/` (repo root).

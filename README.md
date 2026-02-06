@@ -39,6 +39,7 @@ The segmentation architecture Mask2Former is kept fixed. Only the encoder is var
 .
 |-- configs/
 |   |-- base.yaml
+|   |-- mask2former_voc.yaml
 |   |-- encoder_clip.yaml
 |   |-- encoder_dinov2.yaml
 |   `-- encoder_mae.yaml
@@ -82,6 +83,39 @@ cd encoders-and-semantic-seg
 ## Running Experiments
 
 See `docs/setup.md` for commands and tips.
+
+### Entry Points
+
+- `experiments/train_mask2former.py` is the full training/evaluation entrypoint for Detectron2 + Mask2Former.
+- `experiments/run_experiment.py` is a convenience wrapper:
+  - By default it uses `configs/mask2former_voc.yaml` and `configs/encoder_clip.yaml`.
+  - `--mode train` and `--mode eval` both run full Mask2Former flow out of the box.
+
+### Full Training
+
+```bash
+python experiments/run_experiment.py
+```
+
+### Full Evaluation
+
+```bash
+python experiments/run_experiment.py \
+  --mode eval \
+  --weights path/to/model_final.pth
+```
+
+Equivalent direct runner:
+
+```bash
+python experiments/train_mask2former.py
+python experiments/train_mask2former.py --eval-only --opts MODEL.WEIGHTS path/to/model_final.pth
+```
+
+Evaluation writes `OUTPUT_DIR/eval_results.json` with:
+- segmentation quality metrics (including `mIoU`, mean class accuracy, and confusion matrix for sem-seg datasets),
+- inference benchmark (seconds/image, images/second),
+- parameter counts and FLOPs (when available).
 
 ---
 
