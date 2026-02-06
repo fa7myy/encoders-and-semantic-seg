@@ -326,13 +326,18 @@ def _benchmark_inference(
 class SemSegEvaluatorWithConfusion(SemSegEvaluator):
     def evaluate(self):
         results = super().evaluate() or {}
-        sem_seg_results = results.get("sem_seg")
         conf_mat = getattr(self, "_conf_matrix", None)
-        if sem_seg_results is None or conf_mat is None:
+        if conf_mat is None:
             return results
+
         if conf_mat.shape[0] > 1 and conf_mat.shape[1] > 1:
             conf_mat = conf_mat[:-1, :-1]
-        sem_seg_results["confusion_matrix"] = conf_mat.tolist()
+
+        output_dir = getattr(self, "_output_dir", None)
+        if output_dir:
+            out_file = os.path.join(output_dir, "confusion_matrix.json")
+            write_json_file(out_file, {"confusion_matrix": conf_mat})
+            print(f"[train_mask2former] Saved confusion matrix to {out_file}")
         return results
 
 

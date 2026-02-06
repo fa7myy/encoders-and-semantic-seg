@@ -1,0 +1,69 @@
+_BASE_: "../Mask2Former/configs/ade20k/semantic-segmentation/maskformer2_R50_bs16_160k.yaml"
+
+DATASETS:
+  TRAIN: ("voc_2012_sem_seg_train",)
+  TEST: ("voc_2012_sem_seg_val",)
+
+MODEL:
+  META_ARCHITECTURE: "MaskFormer"
+  WEIGHTS: ""
+  BACKBONE:
+    FREEZE: False
+  SEM_SEG_HEAD:
+    NAME: "MaskFormerHead"
+    NUM_CLASSES: 21
+    IGNORE_VALUE: 255
+  MASK_FORMER:
+    TRAIN_NUM_POINTS: 16384
+    TEST:
+      SEMANTIC_ON: True
+      INSTANCE_ON: False
+      PANOPTIC_ON: False
+      OVERLAP_THRESHOLD: 0.8
+      OBJECT_MASK_THRESHOLD: 0.8
+
+SOLVER:
+  IMS_PER_BATCH: 8
+  OPTIMIZER: "ADAMW"
+  BASE_LR: 0.0001
+  WEIGHT_DECAY: 0.05
+  LR_SCHEDULER_NAME: "WarmupPolyLR"
+  BACKBONE_MULTIPLIER: 0.1
+  WARMUP_ITERS: 1000
+  WARMUP_FACTOR: 1.0e-6
+  MAX_ITER: 20000
+  CHECKPOINT_PERIOD: 1000
+  CLIP_GRADIENTS:
+    ENABLED: True
+    CLIP_TYPE: "full_model"
+    CLIP_VALUE: 0.01
+    NORM_TYPE: 2.0
+  AMP:
+    ENABLED: True
+
+TEST:
+  EVAL_PERIOD: 1000
+  AUG:
+    ENABLED: True
+
+INPUT:
+  DATASET_MAPPER_NAME: "mask_former_semantic"
+  FORMAT: "RGB"
+  SIZE_DIVISIBILITY: 32
+  COLOR_AUG_SSD: True
+  MIN_SIZE_TRAIN: (512,)
+  MAX_SIZE_TRAIN: 512
+  MIN_SIZE_TEST: 512
+  MAX_SIZE_TEST: 512
+  CROP:
+    ENABLED: True
+    TYPE: "absolute"
+    SIZE: (512, 512)
+    SINGLE_CATEGORY_MAX_AREA: 1.0
+
+DATALOADER:
+  FILTER_EMPTY_ANNOTATIONS: True
+  NUM_WORKERS: 2
+
+OUTPUT_DIR: "./outputs/mask2former_voc_finetune"
+VERSION: 2
