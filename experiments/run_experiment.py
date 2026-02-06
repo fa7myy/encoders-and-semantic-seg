@@ -152,7 +152,13 @@ def main() -> None:
     parser.add_argument("--mask2former-config-file", default=DEFAULT_MASK2FORMER_CONFIG)
     parser.add_argument("--weights", default=None)
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--mask2former-opts", nargs="*", default=None)
+    parser.add_argument(
+        "--mask2former-opts",
+        "--opts",
+        dest="mask2former_opts",
+        nargs="*",
+        default=None,
+    )
     parser.add_argument("--max-epochs", type=int, default=None)
     parser.add_argument("--freeze-backbone", action=BooleanOptionalAction, default=None)
     parser.add_argument("--resume", action=BooleanOptionalAction, default=None)

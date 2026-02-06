@@ -68,7 +68,6 @@ def _build_mask2former_argv(cfg: Dict[str, Any], eval_only: bool) -> List[str]:
         opts.extend(["MODEL.WEIGHTS", str(mask_cfg["weights"])])
     opts.extend(_as_str_list(mask_cfg.get("opts")))
     if opts:
-        argv.append("--opts")
         argv.extend(opts)
 
     return argv
