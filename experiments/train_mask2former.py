@@ -374,28 +374,9 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_test_loader(cls, cfg, dataset_name):
-        mapper_name = getattr(cfg.INPUT, "DATASET_MAPPER_NAME", "")
-        mapper = None
-        if mapper_name == "mask_former_semantic":
-            from mask2former.data.dataset_mappers.mask_former_semantic_dataset_mapper import (
-                MaskFormerSemanticDatasetMapper,
-            )
-
-            mapper = MaskFormerSemanticDatasetMapper(cfg, False)
-        elif mapper_name == "mask_former_instance":
-            from mask2former.data.dataset_mappers.mask_former_instance_dataset_mapper import (
-                MaskFormerInstanceDatasetMapper,
-            )
-
-            mapper = MaskFormerInstanceDatasetMapper(cfg, False)
-        elif mapper_name == "mask_former_panoptic":
-            from mask2former.data.dataset_mappers.mask_former_panoptic_dataset_mapper import (
-                MaskFormerPanopticDatasetMapper,
-            )
-
-            mapper = MaskFormerPanopticDatasetMapper(cfg, False)
-
-        return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
+        # Upstream Mask2Former evaluates with Detectron2's default test loader.
+        # Its custom dataset mappers are train-only in this version.
+        return build_detection_test_loader(cfg, dataset_name)
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
