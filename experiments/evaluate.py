@@ -38,9 +38,10 @@ def _build_mask2former_argv(cfg: Dict[str, Any], eval_only: bool) -> List[str]:
         str(mask_cfg.get("encoder_config", "configs/encoder_clip.yaml")),
         "--base-encoder-config",
         str(mask_cfg.get("base_encoder_config", "configs/base.yaml")),
-        "--max-epochs",
-        str(int(mask_cfg.get("max_epochs", 30))),
     ]
+    max_epochs = mask_cfg.get("max_epochs")
+    if max_epochs is not None:
+        argv.extend(["--max-epochs", str(int(max_epochs))])
     if eval_only:
         argv.append("--eval-only")
 

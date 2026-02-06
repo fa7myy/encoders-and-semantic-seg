@@ -129,6 +129,8 @@ def _apply_encoder_cfg(cfg, encoder_cfg: Dict[str, Any]) -> None:
 
 
 def _apply_input_cfg(cfg, data_cfg: Dict[str, Any]) -> None:
+    if not data_cfg.get("override_mask2former_input", False):
+        return
     input_size = data_cfg.get("input_size")
     if input_size:
         cfg.INPUT.MIN_SIZE_TRAIN = [input_size]
@@ -485,8 +487,6 @@ def setup(args):
     cfg.merge_from_list(args.opts)
 
     opts = set(args.opts)
-    if "SOLVER.IMS_PER_BATCH" not in opts:
-        cfg.SOLVER.IMS_PER_BATCH = 2
     if args.freeze_backbone:
         cfg.MODEL.BACKBONE.FREEZE = True
 
@@ -509,10 +509,6 @@ def setup(args):
             "Evaluation requires model weights. Provide MODEL.WEIGHTS via --opts or set --resume."
         )
 
-    if "MODEL.MASK_FORMER.NUM_OBJECT_QUERIES" not in opts:
-        cfg.MODEL.MASK_FORMER.NUM_OBJECT_QUERIES = 50
-    if "MODEL.MASK_FORMER.TRAIN_NUM_POINTS" not in opts:
-        cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS = 8192
     _maybe_set_max_iter(cfg, args.max_epochs, opts)
 
     cfg.freeze()
@@ -578,7 +574,7 @@ def build_parser():
     parser.add_argument("--encoder-config", default=DEFAULT_ENCODER_CONFIG)
     parser.add_argument("--base-encoder-config", default=DEFAULT_BASE_ENCODER_CONFIG)
     parser.add_argument("--freeze-backbone", action="store_true")
-    parser.add_argument("--max-epochs", type=int, default=30)
+    parser.add_argument("--max-epochs", type=int, default=None)
     parser.add_argument("--skip-flops", action="store_true")
     parser.add_argument("--skip-inference-benchmark", action="store_true")
     parser.add_argument("--benchmark-max-batches", type=int, default=50)
