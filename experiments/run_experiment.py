@@ -17,6 +17,35 @@ from utils.data import (
     validate_mask2former_config,
 )
 
+
+class _CompatBooleanOptionalAction(argparse.Action):
+    """
+    Python 3.8-compatible replacement for argparse.BooleanOptionalAction.
+    """
+
+    def __init__(self, option_strings, dest, **kwargs):
+        option_strings = list(option_strings)
+        expanded = []
+        for option_string in option_strings:
+            expanded.append(option_string)
+            if option_string.startswith("--"):
+                expanded.append("--no-" + option_string[2:])
+        kwargs.pop("nargs", None)
+        super().__init__(option_strings=expanded, dest=dest, nargs=0, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if option_string and option_string.startswith("--no-"):
+            setattr(namespace, self.dest, False)
+        else:
+            setattr(namespace, self.dest, True)
+
+
+BooleanOptionalAction = getattr(
+    argparse,
+    "BooleanOptionalAction",
+    _CompatBooleanOptionalAction,
+)
+
 DEFAULT_ENCODER_CONFIG = "configs/encoder_clip.yaml"
 DEFAULT_MASK2FORMER_CONFIG = "configs/mask2former_voc.yaml"
 
@@ -115,21 +144,21 @@ def main() -> None:
     parser.add_argument("--fpn-dim", type=int, default=None)
     parser.add_argument("--tap-fractions", default=None)
     parser.add_argument(
-        "--use-topdown-fpn", action=argparse.BooleanOptionalAction, default=None
+        "--use-topdown-fpn", action=BooleanOptionalAction, default=None
     )
     parser.add_argument(
-        "--shape-check", action=argparse.BooleanOptionalAction, default=None
+        "--shape-check", action=BooleanOptionalAction, default=None
     )
     parser.add_argument("--mask2former-config-file", default=DEFAULT_MASK2FORMER_CONFIG)
     parser.add_argument("--weights", default=None)
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--mask2former-opts", nargs="*", default=None)
     parser.add_argument("--max-epochs", type=int, default=None)
-    parser.add_argument("--freeze-backbone", action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument("--skip-flops", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--freeze-backbone", action=BooleanOptionalAction, default=None)
+    parser.add_argument("--resume", action=BooleanOptionalAction, default=None)
+    parser.add_argument("--skip-flops", action=BooleanOptionalAction, default=None)
     parser.add_argument(
-        "--skip-inference-benchmark", action=argparse.BooleanOptionalAction, default=None
+        "--skip-inference-benchmark", action=BooleanOptionalAction, default=None
     )
     parser.add_argument("--benchmark-max-batches", type=int, default=None)
     parser.add_argument("--eval-output-file", default=None)
