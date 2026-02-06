@@ -1,6 +1,3 @@
-# Default Detectron2/Mask2Former config for this repo.
-# This inherits Mask2Former model recipe and explicitly overrides ADE-sensitive settings
-# (datasets/classes/mapper/input behavior) for VOC semantic segmentation.
 _BASE_: "../Mask2Former/configs/ade20k/semantic-segmentation/maskformer2_R50_bs16_160k.yaml"
 
 DATASETS:
@@ -9,22 +6,22 @@ DATASETS:
 
 MODEL:
   META_ARCHITECTURE: "MaskFormer"
-  WEIGHTS: "detectron2://ImageNetPretrained/torchvision/R-50.pkl"
-  MASK_FORMER:
+  WEIGHTS: ""
+  SEM_SEG_HEAD:
+    NAME: "MaskFormerHead"
     NUM_CLASSES: 21
+    IGNORE_VALUE: 255
+  MASK_FORMER:
+    TRAIN_NUM_POINTS: 16384
     TEST:
       SEMANTIC_ON: True
       INSTANCE_ON: False
       PANOPTIC_ON: False
       OVERLAP_THRESHOLD: 0.8
       OBJECT_MASK_THRESHOLD: 0.8
-  SEM_SEG_HEAD:
-    NAME: "MaskFormerHead"
-    NUM_CLASSES: 21
-    IGNORE_VALUE: 255
 
 SOLVER:
-  IMS_PER_BATCH: 16
+  IMS_PER_BATCH: 8
   OPTIMIZER: "ADAMW"
   BASE_LR: 0.0001
   WEIGHT_DECAY: 0.05
@@ -45,18 +42,17 @@ SOLVER:
 TEST:
   EVAL_PERIOD: 1000
   AUG:
-    ENABLED: False
+    ENABLED: True
 
 INPUT:
   DATASET_MAPPER_NAME: "mask_former_semantic"
   FORMAT: "RGB"
-  MIN_SIZE_TRAIN_SAMPLING: "choice"
-  SIZE_DIVISIBILITY: 512
+  SIZE_DIVISIBILITY: 32
   COLOR_AUG_SSD: True
-  MIN_SIZE_TRAIN: !!python/object/apply:eval ["[int(x * 0.1 * 512) for x in range(5, 21)]"]
-  MAX_SIZE_TRAIN: 2048
+  MIN_SIZE_TRAIN: (512,)
+  MAX_SIZE_TRAIN: 512
   MIN_SIZE_TEST: 512
-  MAX_SIZE_TEST: 2048
+  MAX_SIZE_TEST: 512
   CROP:
     ENABLED: True
     TYPE: "absolute"
