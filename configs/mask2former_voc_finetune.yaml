@@ -7,8 +7,6 @@ DATASETS:
 MODEL:
   META_ARCHITECTURE: "MaskFormer"
   WEIGHTS: ""
-  BACKBONE:
-    FREEZE: False
   SEM_SEG_HEAD:
     NAME: "MaskFormerHead"
     NUM_CLASSES: 150
