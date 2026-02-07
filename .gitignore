@@ -1,1 +1,8 @@
 datasets/
+outputs/
+__pycache__/
+*.pyc
+
+# Local clones of large external repos (keep out of this repo's git history).
+Mask2Former/
+ADE20K/

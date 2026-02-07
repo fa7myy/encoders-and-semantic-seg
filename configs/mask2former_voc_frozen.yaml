@@ -1,18 +1,20 @@
 _BASE_: "../Mask2Former/configs/ade20k/semantic-segmentation/maskformer2_R50_bs16_160k.yaml"
 
 DATASETS:
-  TRAIN: ("voc_2012_sem_seg_train",)
-  TEST: ("voc_2012_sem_seg_val",)
+  TRAIN: ("ade20k_sem_seg_train",)
+  TEST: ("ade20k_sem_seg_val",)
 
 MODEL:
   META_ARCHITECTURE: "MaskFormer"
   WEIGHTS: ""
+  BACKBONE:
+    FREEZE: True
   SEM_SEG_HEAD:
     NAME: "MaskFormerHead"
-    NUM_CLASSES: 21
+    NUM_CLASSES: 150
     IGNORE_VALUE: 255
   MASK_FORMER:
-    TRAIN_NUM_POINTS: 16384
+    TRAIN_NUM_POINTS: 8192
     TEST:
       SEMANTIC_ON: True
       INSTANCE_ON: False
@@ -21,7 +23,8 @@ MODEL:
       OBJECT_MASK_THRESHOLD: 0.8
 
 SOLVER:
-  IMS_PER_BATCH: 8
+  # Colab/T4-friendly defaults (override on CLI if you have more VRAM).
+  IMS_PER_BATCH: 2
   OPTIMIZER: "ADAMW"
   BASE_LR: 0.0001
   WEIGHT_DECAY: 0.05
@@ -63,5 +66,5 @@ DATALOADER:
   FILTER_EMPTY_ANNOTATIONS: True
   NUM_WORKERS: 2
 
-OUTPUT_DIR: "./outputs/mask2former_voc"
+OUTPUT_DIR: "./outputs/mask2former_ade20k150_frozen"
 VERSION: 2

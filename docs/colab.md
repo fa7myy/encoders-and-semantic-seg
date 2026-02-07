@@ -155,6 +155,50 @@ The trainer will auto-register the dataset as `voc_2012_sem_seg_train` and
 
 Swap `--encoder-config` and `OUTPUT_DIR` for each encoder trial.
 
+### ADE20K (full, 847-class) semantic segmentation
+
+Mask2Former registers this dataset as `ade20k_full_sem_seg_train` and `ade20k_full_sem_seg_val`,
+but it expects a Detectron2-style on-disk layout under `$DETECTRON2_DATASETS`.
+
+This repo includes a converter that exports the HuggingFace ADE20K dataset into the required
+layout.
+
+Install the extra deps:
+
+```bash
+!pip -q install datasets pyarrow
+```
+
+Export ADE20K-full to Detectron2 format (this is large and can take a while):
+
+```bash
+%cd /content/encoders-and-semantic-seg
+%env DETECTRON2_DATASETS=/content/datasets
+
+# Needed so the converter can reuse Mask2Former’s official category mapping.
+%env PYTHONPATH=/content/Mask2Former:$PYTHONPATH
+
+# Quick sanity-check (no files written).
+!python experiments/prepare_ade20k_full_semseg_from_hf.py \
+  --hf-root CSAILVision/ADE20K \
+  --inspect-only
+
+# Full export (writes jpg + 16-bit tif).
+!python experiments/prepare_ade20k_full_semseg_from_hf.py \
+  --hf-root CSAILVision/ADE20K
+```
+
+Train on ADE20K-full:
+
+```bash
+%cd /content/encoders-and-semantic-seg
+!python experiments/train_mask2former.py \
+  --config-file configs/mask2former_ade20k_full_semseg.yaml \
+  --encoder-config configs/encoder_clip.yaml \
+  --max-epochs 30 \
+  OUTPUT_DIR outputs/ade20k_full_clip
+```
+
 ## 4) Outputs
 
 Training artifacts are saved under `outputs/` by default (configurable via

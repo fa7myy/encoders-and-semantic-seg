@@ -1,0 +1,6 @@
+#
+# Default VOC config entrypoint used by this repo's docs and CLIs.
+# Keep as a thin alias so we can evolve the actual settings without breaking paths.
+#
+_BASE_: "mask2former_voc_frozen.yaml"
+
