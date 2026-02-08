@@ -90,7 +90,9 @@ def _register_overfit_datasets(cfg, num_samples: int) -> None:
                 subset_name,
                 lambda base_name=name: _subset_dataset(DatasetCatalog.get(base_name)),
             )
-            MetadataCatalog.get(subset_name).set(**MetadataCatalog.get(name).as_dict())
+            meta = dict(MetadataCatalog.get(name).as_dict())
+            meta.pop("name", None)
+            MetadataCatalog.get(subset_name).set(**meta)
         return subset_name
 
     cfg.DATASETS.TRAIN = tuple(_register_subset(name) for name in train_names)
