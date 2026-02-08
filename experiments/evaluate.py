@@ -47,6 +47,8 @@ def _build_mask2former_argv(cfg: Dict[str, Any], eval_only: bool) -> List[str]:
 
     if mask_cfg.get("freeze_backbone", False):
         argv.append("--freeze-backbone")
+    if mask_cfg.get("encoder_neck_type"):
+        argv.extend(["--neck-type", str(mask_cfg["encoder_neck_type"])])
     if mask_cfg.get("overfit_20", False):
         argv.append("--overfit-20")
     if mask_cfg.get("resume", False):

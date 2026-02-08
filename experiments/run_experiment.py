@@ -97,6 +97,8 @@ def _apply_mask2former_overrides(cfg: Dict[str, Any], args) -> None:
         mask_cfg["max_epochs"] = int(args.max_epochs)
     if args.freeze_backbone is not None:
         mask_cfg["freeze_backbone"] = bool(args.freeze_backbone)
+    if args.neck_type is not None:
+        mask_cfg["encoder_neck_type"] = args.neck_type
     if args.overfit_20 is not None:
         mask_cfg["overfit_20"] = bool(args.overfit_20)
     if args.resume is not None:

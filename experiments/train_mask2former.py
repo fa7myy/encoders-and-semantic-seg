@@ -567,6 +567,10 @@ def setup(args):
         merged = _deep_merge(base_cfg, override_cfg)
         encoder_cfg = merged.get("encoder", {})
         data_cfg = merged.get("data", {})
+        if args.neck_type:
+            encoder_cfg = dict(encoder_cfg)
+            encoder_cfg["neck_type"] = args.neck_type
+            print(f"[train_mask2former] Using encoder.neck_type={args.neck_type}")
         validate_encoder_and_data_config(
             encoder_cfg,
             data_cfg,
@@ -651,6 +655,7 @@ def build_parser():
     parser.add_argument("--encoder-config", default=DEFAULT_ENCODER_CONFIG)
     parser.add_argument("--base-encoder-config", default=DEFAULT_BASE_ENCODER_CONFIG)
     parser.add_argument("--freeze-backbone", action="store_true")
+    parser.add_argument("--neck-type", default=None)
     parser.add_argument("--overfit-20", action="store_true")
     parser.add_argument("--max-epochs", type=int, default=None)
     parser.add_argument("--skip-flops", action="store_true")
