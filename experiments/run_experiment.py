@@ -141,6 +141,7 @@ def main() -> None:
     parser.add_argument("--base-config", default="configs/base.yaml")
     parser.add_argument("--mode", choices=["train", "eval"], default="train")
     parser.add_argument("--encoder", default=None)
+    parser.add_argument("--neck-type", default=None)
     parser.add_argument("--data-fraction", type=float, default=None)
     parser.add_argument("--input-size", type=int, default=None)
     parser.add_argument("--fpn-dim", type=int, default=None)
@@ -182,6 +183,8 @@ def main() -> None:
 
     if args.encoder:
         cfg.setdefault("encoder", {})["name"] = args.encoder
+    if args.neck_type:
+        cfg.setdefault("encoder", {})["neck_type"] = args.neck_type
     if args.fpn_dim is not None:
         cfg.setdefault("encoder", {})["fpn_dim"] = args.fpn_dim
     if args.tap_fractions:
