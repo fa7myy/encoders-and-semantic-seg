@@ -53,12 +53,12 @@ DEFAULT_BASE_ENCODER_CONFIG = "configs/base.yaml"
 OVERFIT_SAMPLES_DEFAULT = 20
 
 
-def _register_overfit_datasets(cfg, num_samples: int) -> None:
+def _register_overfit_datasets(cfg, num_samples: int) -> Tuple[str, ...]:
     if num_samples <= 0:
-        return
+        return tuple()
     train_names = list(cfg.DATASETS.TRAIN)
     if not train_names:
-        return
+        return tuple()
 
     suffix = f"_overfit_{num_samples}"
     seed = getattr(cfg, "SEED", -1)
@@ -95,11 +95,13 @@ def _register_overfit_datasets(cfg, num_samples: int) -> None:
             MetadataCatalog.get(subset_name).set(**meta)
         return subset_name
 
-    cfg.DATASETS.TRAIN = tuple(_register_subset(name) for name in train_names)
+    train_subset = tuple(_register_subset(name) for name in train_names)
+    cfg.DATASETS.TRAIN = train_subset
     print(
         f"[train_mask2former] Overfit-20 enabled: using {num_samples} samples per train dataset "
         f"(seed={seed})."
     )
+    return train_subset
 
 
 def _patch_mask2former_empty_targets() -> None:
@@ -579,7 +581,10 @@ def setup(args):
         )
 
     if args.overfit_20:
-        _register_overfit_datasets(cfg, OVERFIT_SAMPLES_DEFAULT)
+        train_subset = _register_overfit_datasets(cfg, OVERFIT_SAMPLES_DEFAULT)
+        if train_subset:
+            cfg.DATASETS.TEST = train_subset
+            print("[train_mask2former] Overfit-20 enabled: evaluating on train subset.")
 
     _maybe_set_max_iter(cfg, args.max_epochs, opts)
 
