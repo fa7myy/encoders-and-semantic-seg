@@ -47,6 +47,8 @@ def _build_mask2former_argv(cfg: Dict[str, Any], eval_only: bool) -> List[str]:
 
     if mask_cfg.get("freeze_backbone", False):
         argv.append("--freeze-backbone")
+    if mask_cfg.get("overfit_20", False):
+        argv.append("--overfit-20")
     if mask_cfg.get("resume", False):
         argv.append("--resume")
     if mask_cfg.get("skip_flops", False):

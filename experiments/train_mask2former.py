@@ -2,6 +2,7 @@ import argparse
 import itertools
 import math
 import os
+import random
 import sys
 import time
 from typing import Any, Dict, Optional, Tuple
@@ -49,6 +50,54 @@ maybe_register_voc2012()
 DEFAULT_MASK2FORMER_CONFIG = "configs/mask2former_voc.yaml"
 DEFAULT_ENCODER_CONFIG = "configs/encoder_clip.yaml"
 DEFAULT_BASE_ENCODER_CONFIG = "configs/base.yaml"
+OVERFIT_SAMPLES_DEFAULT = 20
+
+
+def _register_overfit_datasets(cfg, num_samples: int) -> None:
+    if num_samples <= 0:
+        return
+    train_names = list(cfg.DATASETS.TRAIN)
+    if not train_names:
+        return
+
+    suffix = f"_overfit_{num_samples}"
+    seed = getattr(cfg, "SEED", -1)
+    try:
+        seed = int(seed)
+    except Exception:
+        seed = -1
+    if seed < 0:
+        seed = 0
+
+    def _subset_dataset(dataset):
+        dataset = list(dataset)
+        if len(dataset) <= num_samples:
+            return dataset
+        rng = random.Random(seed)
+        indices = list(range(len(dataset)))
+        rng.shuffle(indices)
+        return [dataset[i] for i in indices[:num_samples]]
+
+    def _register_subset(name: str) -> str:
+        if name.endswith(suffix):
+            return name
+        if name not in DatasetCatalog.list():
+            print(f"[train_mask2former] Overfit requested but dataset '{name}' is not registered.")
+            return name
+        subset_name = f"{name}{suffix}"
+        if subset_name not in DatasetCatalog.list():
+            DatasetCatalog.register(
+                subset_name,
+                lambda base_name=name: _subset_dataset(DatasetCatalog.get(base_name)),
+            )
+            MetadataCatalog.get(subset_name).set(**MetadataCatalog.get(name).as_dict())
+        return subset_name
+
+    cfg.DATASETS.TRAIN = tuple(_register_subset(name) for name in train_names)
+    print(
+        f"[train_mask2former] Overfit-20 enabled: using {num_samples} samples per train dataset "
+        f"(seed={seed})."
+    )
 
 
 def _patch_mask2former_empty_targets() -> None:
@@ -527,6 +576,9 @@ def setup(args):
             "Evaluation requires model weights. Provide MODEL.WEIGHTS via --opts or set --resume."
         )
 
+    if args.overfit_20:
+        _register_overfit_datasets(cfg, OVERFIT_SAMPLES_DEFAULT)
+
     _maybe_set_max_iter(cfg, args.max_epochs, opts)
 
     cfg.freeze()
@@ -592,6 +644,7 @@ def build_parser():
     parser.add_argument("--encoder-config", default=DEFAULT_ENCODER_CONFIG)
     parser.add_argument("--base-encoder-config", default=DEFAULT_BASE_ENCODER_CONFIG)
     parser.add_argument("--freeze-backbone", action="store_true")
+    parser.add_argument("--overfit-20", action="store_true")
     parser.add_argument("--max-epochs", type=int, default=None)
     parser.add_argument("--skip-flops", action="store_true")
     parser.add_argument("--skip-inference-benchmark", action="store_true")
